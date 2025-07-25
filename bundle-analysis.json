@@ -1,0 +1,45 @@
+{
+  "timestamp": "2025-07-25T08:47:12.343Z",
+  "nodeVersion": "v22.15.1",
+  "results": {
+    "es": {
+      "name": "ESM",
+      "totalSize": 46051,
+      "totalGzipSize": 12771,
+      "totalSizeFormatted": "44.97 KB",
+      "totalGzipSizeFormatted": "12.47 KB",
+      "fileCount": 12
+    },
+    "lib": {
+      "name": "CommonJS",
+      "totalSize": 48228,
+      "totalGzipSize": 13353,
+      "totalSizeFormatted": "47.1 KB",
+      "totalGzipSizeFormatted": "13.04 KB",
+      "fileCount": 12
+    },
+    "dist": {
+      "name": "UMD",
+      "totalSize": 241337,
+      "totalGzipSize": 49097,
+      "totalSizeFormatted": "235.68 KB",
+      "totalGzipSizeFormatted": "47.95 KB",
+      "fileCount": 5
+    },
+    "types": {
+      "name": "TypeScript Declarations",
+      "totalSize": 11405,
+      "totalGzipSize": 4212,
+      "totalSizeFormatted": "11.14 KB",
+      "totalGzipSizeFormatted": "4.11 KB",
+      "fileCount": 6
+    }
+  },
+  "summary": {
+    "totalFiles": 35,
+    "totalSize": 347021,
+    "totalGzipSize": 79433,
+    "totalSizeFormatted": "338.89 KB",
+    "totalGzipSizeFormatted": "77.57 KB"
+  }
+}
