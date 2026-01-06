@@ -4,4 +4,5 @@
  */
 
 export * from './useErrorHandler'
+export * from './useAsyncError'
 

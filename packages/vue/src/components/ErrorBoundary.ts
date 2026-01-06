@@ -1,20 +1,43 @@
 /**
  * 错误边界组件
+ *
  * @description 捕获子组件错误并显示友好的错误界面
+ * 支持自定义主题、重试、自定义回退内容
+ *
  * @example
  * ```vue
  * <ErrorBoundary @error="handleError" :show-stack="isDev">
  *   <MyComponent />
  * </ErrorBoundary>
  * ```
+ *
+ * @example
+ * ```vue
+ * <!-- 自定义回退内容 -->
+ * <ErrorBoundary>
+ *   <MyComponent />
+ *   <template #fallback="{ error, retry, reset }">
+ *     <div>自定义错误界面: {{ error.message }}</div>
+ *   </template>
+ * </ErrorBoundary>
+ * ```
  */
 
-import { defineComponent, h, onErrorCaptured, ref, computed, type PropType, type VNode } from 'vue'
+import {
+  computed,
+  defineComponent,
+  h,
+  onErrorCaptured,
+  ref,
+  Transition,
+  type PropType,
+  type VNode,
+} from 'vue'
 import type { ErrorInfo } from '@ldesign/error-core'
 import { ErrorLevel, ErrorSource } from '@ldesign/error-core'
 
 /** 生成错误 ID */
-function generateId(): string {
+function generateErrorId(): string {
   return `err_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
 }
 
@@ -22,7 +45,7 @@ function generateId(): string {
  * 错误边界组件
  */
 export const ErrorBoundary = defineComponent({
-  name: 'ErrorBoundary',
+  name: 'LErrorBoundary',
 
   props: {
     /** 是否显示错误详情 */
@@ -30,7 +53,7 @@ export const ErrorBoundary = defineComponent({
       type: Boolean as PropType<boolean>,
       default: true,
     },
-    /** 是否显示堆栈 */
+    /** 是否显示堆栈（建议仅开发环境启用） */
     showStack: {
       type: Boolean as PropType<boolean>,
       default: false,
@@ -46,20 +69,33 @@ export const ErrorBoundary = defineComponent({
       default: 3,
     },
     /** 自定义错误标题 */
-    errorTitle: {
+    title: {
       type: String as PropType<string>,
-      default: '组件发生错误',
+      default: 'Oops! Something went wrong',
     },
     /** 自定义错误消息 */
-    errorMessage: {
+    message: {
       type: String as PropType<string>,
-      default: '抱歉，该组件遇到了问题',
+      default: 'We encountered an unexpected error. Please try again.',
+    },
+    /** 是否显示图标 */
+    showIcon: {
+      type: Boolean as PropType<boolean>,
+      default: true,
+    },
+    /** 主题色 */
+    theme: {
+      type: String as PropType<'light' | 'dark' | 'auto'>,
+      default: 'light',
     },
   },
 
   emits: {
+    /** 错误事件 */
     error: (_error: ErrorInfo) => true,
+    /** 重置事件 */
     reset: () => true,
+    /** 重试事件 */
     retry: (_count: number) => true,
   },
 
@@ -82,12 +118,14 @@ export const ErrorBoundary = defineComponent({
     onErrorCaptured((error: Error, instance, info) => {
       hasError.value = true
 
-      const componentName = instance?.$options?.name || instance?.$options?.__name || '未知组件'
+      const componentName = instance?.$options?.name
+        || instance?.$options?.__name
+        || 'UnknownComponent'
 
       errorInfo.value = {
-        id: generateId(),
-        name: error.name,
-        message: error.message,
+        id: generateErrorId(),
+        name: error.name || 'Error',
+        message: error.message || 'Unknown error',
         stack: error.stack,
         level: ErrorLevel.ERROR,
         source: ErrorSource.VUE,
@@ -110,12 +148,12 @@ export const ErrorBoundary = defineComponent({
 
     /** 重试 */
     function handleRetry(): void {
-      if (!canRetry.value)
-        return
+      if (!canRetry.value) return
 
       retryCount.value++
       hasError.value = false
       errorInfo.value = null
+      isExpanded.value = false
 
       emit('retry', retryCount.value)
     }
@@ -125,6 +163,7 @@ export const ErrorBoundary = defineComponent({
       hasError.value = false
       errorInfo.value = null
       retryCount.value = 0
+      isExpanded.value = false
 
       emit('reset')
     }
@@ -134,77 +173,137 @@ export const ErrorBoundary = defineComponent({
       isExpanded.value = !isExpanded.value
     }
 
-    /** 渲染错误界面 */
-    function renderErrorUI(): VNode {
-      const err = errorInfo.value
+    /** 获取主题样式 */
+    function getThemeStyles(): Record<string, string> {
+      const isDark = props.theme === 'dark'
+        || (props.theme === 'auto' && typeof window !== 'undefined'
+          && window.matchMedia('(prefers-color-scheme: dark)').matches)
 
-      return h('div', { class: 'error-boundary', style: errorBoundaryStyles.container }, [
-        h('div', { class: 'error-boundary__content', style: errorBoundaryStyles.content }, [
-          // 错误图标
-          h('div', { class: 'error-boundary__icon', style: errorBoundaryStyles.icon }, '❌'),
+      return isDark ? darkTheme : lightTheme
+    }
 
-          // 错误标题
-          h('h3', { class: 'error-boundary__title', style: errorBoundaryStyles.title }, props.errorTitle),
+    /** 渲染错误图标 */
+    function renderIcon(): VNode {
+      return h('div', {
+        class: 'l-error-boundary__icon',
+        style: styles.icon,
+        innerHTML: errorIconSvg,
+      })
+    }
 
-          // 错误消息
-          h('p', { class: 'error-boundary__message', style: errorBoundaryStyles.message }, props.errorMessage),
+    /** 渲染错误详情 */
+    function renderDetails(err: ErrorInfo): VNode {
+      const theme = getThemeStyles()
 
-          // 错误详情
-          props.showDetails && err
-            ? renderDetails(err)
-            : null,
-
-          // 操作按钮
-          renderActions(),
+      return h('div', { class: 'l-error-boundary__details', style: styles.details }, [
+        h('button', {
+          class: 'l-error-boundary__toggle',
+          style: { ...styles.toggle, color: theme.textSecondary },
+          onClick: toggleExpand,
+        }, [
+          isExpanded.value ? 'Hide Details' : 'Show Details',
+          h('span', {
+            style: {
+              marginLeft: '4px',
+              transform: isExpanded.value ? 'rotate(180deg)' : 'rotate(0deg)',
+              display: 'inline-block',
+              transition: 'transform 0.2s ease',
+            },
+          }, '▼'),
         ]),
+
+        h(Transition, { name: 'l-error-expand' }, () =>
+          isExpanded.value
+            ? h('div', {
+              class: 'l-error-boundary__info',
+              style: { ...styles.info, background: theme.infoBg },
+            }, [
+              renderInfoRow('Error', err.name),
+              renderInfoRow('Message', err.message),
+              err.componentInfo?.name
+                ? renderInfoRow('Component', err.componentInfo.name)
+                : null,
+              renderInfoRow('Time', new Date(err.timestamp).toLocaleString()),
+
+              props.showStack && err.stack
+                ? h('div', { class: 'l-error-boundary__stack', style: styles.stack }, [
+                  h('div', { style: styles.stackLabel }, 'Stack Trace'),
+                  h('pre', { style: styles.stackPre }, err.stack),
+                ])
+                : null,
+            ])
+            : null,
+        ),
       ])
     }
 
-    /** 渲染详情 */
-    function renderDetails(err: ErrorInfo): VNode {
-      return h('div', { class: 'error-boundary__details', style: errorBoundaryStyles.details }, [
-        h('button', {
-          class: 'error-boundary__toggle',
-          style: errorBoundaryStyles.toggle,
-          onClick: toggleExpand,
-        }, isExpanded.value ? '收起详情 ▲' : '查看详情 ▼'),
-
-        isExpanded.value
-          ? h('div', { class: 'error-boundary__info', style: errorBoundaryStyles.info }, [
-            h('p', null, [h('strong', null, '错误名称: '), err.name]),
-            h('p', null, [h('strong', null, '错误消息: '), err.message]),
-            err.componentInfo?.name
-              ? h('p', null, [h('strong', null, '组件: '), err.componentInfo.name])
-              : null,
-            h('p', null, [h('strong', null, '时间: '), new Date(err.timestamp).toLocaleString()]),
-
-            // 堆栈信息
-            props.showStack && err.stack
-              ? h('div', { class: 'error-boundary__stack', style: errorBoundaryStyles.stack }, [
-                h('strong', null, '堆栈:'),
-                h('pre', { style: errorBoundaryStyles.stackPre }, err.stack),
-              ])
-              : null,
-          ])
-          : null,
+    /** 渲染信息行 */
+    function renderInfoRow(label: string, value: string): VNode {
+      return h('div', { style: styles.infoRow }, [
+        h('span', { style: styles.infoLabel }, label),
+        h('span', { style: styles.infoValue }, value),
       ])
     }
 
     /** 渲染操作按钮 */
     function renderActions(): VNode {
-      return h('div', { class: 'error-boundary__actions', style: errorBoundaryStyles.actions }, [
+      return h('div', { class: 'l-error-boundary__actions', style: styles.actions }, [
         canRetry.value
           ? h('button', {
-            class: 'error-boundary__btn error-boundary__btn--retry',
-            style: errorBoundaryStyles.btnRetry,
+            class: 'l-error-boundary__btn l-error-boundary__btn--primary',
+            style: styles.btnPrimary,
             onClick: handleRetry,
-          }, `重试 (${retryCount.value}/${props.maxRetries})`)
+          }, [
+            h('span', { innerHTML: retryIconSvg, style: styles.btnIcon }),
+            `Retry (${retryCount.value}/${props.maxRetries})`,
+          ])
           : null,
         h('button', {
-          class: 'error-boundary__btn error-boundary__btn--reset',
-          style: errorBoundaryStyles.btnReset,
+          class: 'l-error-boundary__btn l-error-boundary__btn--secondary',
+          style: styles.btnSecondary,
           onClick: handleReset,
-        }, '重置'),
+        }, [
+          h('span', { innerHTML: resetIconSvg, style: styles.btnIcon }),
+          'Reset',
+        ]),
+      ])
+    }
+
+    /** 渲染错误界面 */
+    function renderErrorUI(): VNode {
+      const err = errorInfo.value
+      const theme = getThemeStyles()
+
+      return h('div', {
+        class: 'l-error-boundary',
+        style: {
+          ...styles.container,
+          background: theme.background,
+          borderColor: theme.border,
+        },
+      }, [
+        h('div', { class: 'l-error-boundary__content', style: styles.content }, [
+          // 错误图标
+          props.showIcon ? renderIcon() : null,
+
+          // 错误标题
+          h('h3', {
+            class: 'l-error-boundary__title',
+            style: { ...styles.title, color: theme.title },
+          }, props.title),
+
+          // 错误消息
+          h('p', {
+            class: 'l-error-boundary__message',
+            style: { ...styles.message, color: theme.text },
+          }, props.message),
+
+          // 错误详情
+          props.showDetails && err ? renderDetails(err) : null,
+
+          // 操作按钮
+          renderActions(),
+        ]),
       ])
     }
 
@@ -231,96 +330,181 @@ export const ErrorBoundary = defineComponent({
   },
 })
 
-/** 内联样式 */
-const errorBoundaryStyles = {
+// ============================================================================
+// 主题配置
+// ============================================================================
+
+const lightTheme = {
+  background: 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)',
+  border: '#fca5a5',
+  title: '#b91c1c',
+  text: '#7f1d1d',
+  textSecondary: '#991b1b',
+  infoBg: 'rgba(255, 255, 255, 0.9)',
+}
+
+const darkTheme = {
+  background: 'linear-gradient(135deg, #1f1f23 0%, #2a2a2e 100%)',
+  border: '#4b4b52',
+  title: '#fca5a5',
+  text: '#d1d5db',
+  textSecondary: '#9ca3af',
+  infoBg: 'rgba(0, 0, 0, 0.3)',
+}
+
+// ============================================================================
+// 样式定义
+// ============================================================================
+
+const styles = {
   container: {
     position: 'relative' as const,
-    minHeight: '100px',
-    padding: '20px',
-    background: 'linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)',
-    border: '2px solid #ef4444',
-    borderRadius: '8px',
-    boxShadow: '0 4px 12px rgba(239, 68, 68, 0.2)',
+    minHeight: '120px',
+    padding: '32px 24px',
+    borderRadius: '12px',
+    border: '1px solid',
+    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    overflow: 'hidden',
   },
   content: {
     textAlign: 'center' as const,
+    maxWidth: '480px',
+    margin: '0 auto',
   },
   icon: {
-    fontSize: '48px',
-    marginBottom: '12px',
+    width: '64px',
+    height: '64px',
+    margin: '0 auto 16px',
+    opacity: '0.9',
   },
   title: {
     margin: '0 0 8px',
-    fontSize: '18px',
+    fontSize: '20px',
     fontWeight: '600',
-    color: '#dc2626',
+    letterSpacing: '-0.02em',
   },
   message: {
-    margin: '0 0 16px',
+    margin: '0 0 24px',
     fontSize: '14px',
-    color: '#7f1d1d',
+    lineHeight: '1.6',
+    opacity: '0.85',
   },
   details: {
-    marginBottom: '16px',
+    marginBottom: '24px',
     textAlign: 'left' as const,
   },
   toggle: {
-    display: 'inline-block',
-    padding: '4px 12px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '6px 12px',
     fontSize: '12px',
-    color: '#dc2626',
+    fontWeight: '500',
     background: 'transparent',
-    border: '1px solid #dc2626',
-    borderRadius: '4px',
+    border: 'none',
+    borderRadius: '6px',
     cursor: 'pointer',
+    transition: 'all 0.2s ease',
   },
   info: {
     marginTop: '12px',
-    padding: '12px',
-    background: 'rgba(255, 255, 255, 0.8)',
-    borderRadius: '4px',
+    padding: '16px',
+    borderRadius: '8px',
     fontSize: '13px',
-    color: '#374151',
+  },
+  infoRow: {
+    display: 'flex',
+    marginBottom: '8px',
+  },
+  infoLabel: {
+    flexShrink: '0',
+    width: '80px',
+    fontWeight: '500',
+    opacity: '0.7',
+  },
+  infoValue: {
+    flex: '1',
+    wordBreak: 'break-word' as const,
   },
   stack: {
-    marginTop: '8px',
+    marginTop: '12px',
+  },
+  stackLabel: {
+    fontSize: '12px',
+    fontWeight: '500',
+    marginBottom: '8px',
+    opacity: '0.7',
   },
   stackPre: {
-    margin: '8px 0 0',
-    padding: '8px',
-    background: '#1f2937',
-    color: '#f3f4f6',
-    borderRadius: '4px',
+    margin: '0',
+    padding: '12px',
+    background: '#18181b',
+    color: '#a1a1aa',
+    borderRadius: '6px',
     fontSize: '11px',
+    lineHeight: '1.5',
     overflowX: 'auto' as const,
-    maxHeight: '200px',
+    maxHeight: '180px',
   },
   actions: {
     display: 'flex',
     justifyContent: 'center',
     gap: '12px',
+    flexWrap: 'wrap' as const,
   },
-  btnRetry: {
-    padding: '8px 20px',
+  btnPrimary: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
+    padding: '10px 20px',
     fontSize: '14px',
     fontWeight: '500',
     border: 'none',
-    borderRadius: '6px',
+    borderRadius: '8px',
     cursor: 'pointer',
     background: '#dc2626',
     color: '#fff',
+    transition: 'all 0.2s ease',
+    boxShadow: '0 2px 8px rgba(220, 38, 38, 0.3)',
   },
-  btnReset: {
-    padding: '8px 20px',
+  btnSecondary: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
+    padding: '10px 20px',
     fontSize: '14px',
     fontWeight: '500',
-    border: 'none',
-    borderRadius: '6px',
+    border: '1px solid #d1d5db',
+    borderRadius: '8px',
     cursor: 'pointer',
-    background: '#6b7280',
-    color: '#fff',
+    background: 'transparent',
+    color: '#6b7280',
+    transition: 'all 0.2s ease',
+  },
+  btnIcon: {
+    width: '16px',
+    height: '16px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 }
+
+// ============================================================================
+// SVG 图标
+// ============================================================================
+
+const errorIconSvg = `<svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="32" cy="32" r="28" fill="#fef2f2" stroke="#fca5a5" stroke-width="2"/>
+  <path d="M32 18v18" stroke="#ef4444" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="32" cy="44" r="3" fill="#ef4444"/>
+</svg>`
+
+const retryIconSvg = `<svg viewBox="0 0 16 16" fill="currentColor"><path d="M11.534 7h3.932a.25.25 0 0 1 .192.41l-1.966 2.36a.25.25 0 0 1-.384 0l-1.966-2.36a.25.25 0 0 1 .192-.41zm-11 2h3.932a.25.25 0 0 0 .192-.41L2.692 6.23a.25.25 0 0 0-.384 0L.342 8.59A.25.25 0 0 0 .534 9z"/><path fill-rule="evenodd" d="M8 3c-1.552 0-2.94.707-3.857 1.818a.5.5 0 1 1-.771-.636A6.002 6.002 0 0 1 13.917 7H12.9A5.002 5.002 0 0 0 8 3zM3.1 9a5.002 5.002 0 0 0 8.757 2.182.5.5 0 1 1 .771.636A6.002 6.002 0 0 1 2.083 9H3.1z"/></svg>`
+
+const resetIconSvg = `<svg viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/></svg>`
 
 export default ErrorBoundary
 
