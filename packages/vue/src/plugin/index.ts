@@ -4,4 +4,5 @@
  */
 
 export * from './error-plugin'
+export type { GlobalToastOptions } from './error-plugin'
 

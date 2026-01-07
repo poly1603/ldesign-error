@@ -3,10 +3,19 @@
  *
  * @description 捕获子组件错误并显示友好的错误界面
  * 支持自定义主题、重试、自定义回退内容
+ * 支持三种显示模式: full（完整界面）、overlay（覆盖层）、inline（行内）
  *
  * @example
  * ```vue
  * <ErrorBoundary @error="handleError" :show-stack="isDev">
+ *   <MyComponent />
+ * </ErrorBoundary>
+ * ```
+ *
+ * @example
+ * ```vue
+ * <!-- 使用 overlay 模式 -->
+ * <ErrorBoundary mode="overlay">
  *   <MyComponent />
  * </ErrorBoundary>
  * ```
@@ -35,6 +44,15 @@ import {
 } from 'vue'
 import type { ErrorInfo } from '@ldesign/error-core'
 import { ErrorLevel, ErrorSource } from '@ldesign/error-core'
+import { ErrorOverlay } from './ErrorOverlay'
+
+/**
+ * 错误边界显示模式
+ * - full: 完整错误界面（默认）
+ * - overlay: 红色覆盖层，保持原组件位置
+ * - inline: 行内简短显示
+ */
+export type ErrorBoundaryMode = 'full' | 'overlay' | 'inline'
 
 /** 生成错误 ID */
 function generateErrorId(): string {
@@ -48,6 +66,16 @@ export const ErrorBoundary = defineComponent({
   name: 'LErrorBoundary',
 
   props: {
+    /**
+     * 显示模式
+     * - full: 完整错误界面（默认）
+     * - overlay: 红色覆盖层，保持原组件位置
+     * - inline: 行内简短显示
+     */
+    mode: {
+      type: String as PropType<ErrorBoundaryMode>,
+      default: 'full',
+    },
     /** 是否显示错误详情 */
     showDetails: {
       type: Boolean as PropType<boolean>,
@@ -87,6 +115,11 @@ export const ErrorBoundary = defineComponent({
     theme: {
       type: String as PropType<'light' | 'dark' | 'auto'>,
       default: 'light',
+    },
+    /** overlay 模式的最小高度 */
+    overlayMinHeight: {
+      type: String as PropType<string>,
+      default: '80px',
     },
   },
 
@@ -269,8 +302,8 @@ export const ErrorBoundary = defineComponent({
       ])
     }
 
-    /** 渲染错误界面 */
-    function renderErrorUI(): VNode {
+    /** 渲染 full 模式错误界面 */
+    function renderFullErrorUI(): VNode {
       const err = errorInfo.value
       const theme = getThemeStyles()
 
@@ -307,6 +340,63 @@ export const ErrorBoundary = defineComponent({
       ])
     }
 
+    /** 渲染 overlay 模式错误界面 */
+    function renderOverlayUI(): VNode {
+      const err = errorInfo.value
+      if (!err) return h('div')
+
+      return h(ErrorOverlay, {
+        error: err,
+        showRetry: props.retryable,
+        showDetails: props.showDetails,
+        retryCount: retryCount.value,
+        maxRetries: props.maxRetries,
+        minHeight: props.overlayMinHeight,
+        onRetry: handleRetry,
+        onDismiss: handleReset,
+      })
+    }
+
+    /** 渲染 inline 模式错误界面 */
+    function renderInlineUI(): VNode {
+      const err = errorInfo.value
+      const componentName = err?.componentInfo?.name || 'Component'
+
+      return h('div', {
+        class: 'l-error-boundary--inline',
+        style: styles.inlineContainer,
+      }, [
+        h('span', { style: styles.inlineIcon }, '⚠'),
+        h('span', { style: styles.inlineText }, [
+          `${componentName} error: `,
+          h('span', { style: styles.inlineMessage }, err?.message || 'Unknown error'),
+        ]),
+        canRetry.value
+          ? h('button', {
+              style: styles.inlineBtn,
+              onClick: handleRetry,
+            }, 'Retry')
+          : null,
+        h('button', {
+          style: styles.inlineBtn,
+          onClick: handleReset,
+        }, 'Reset'),
+      ])
+    }
+
+    /** 根据 mode 渲染错误界面 */
+    function renderErrorUI(): VNode {
+      switch (props.mode) {
+        case 'overlay':
+          return renderOverlayUI()
+        case 'inline':
+          return renderInlineUI()
+        case 'full':
+        default:
+          return renderFullErrorUI()
+      }
+    }
+
     // 渲染函数
     return (): VNode | VNode[] | undefined => {
       if (!hasError.value) {
@@ -321,10 +411,11 @@ export const ErrorBoundary = defineComponent({
           retry: handleRetry,
           canRetry: canRetry.value,
           retryCount: retryCount.value,
+          mode: props.mode,
         })
       }
 
-      // 默认错误界面
+      // 根据模式渲染错误界面
       return renderErrorUI()
     }
   },
@@ -489,6 +580,47 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Inline 模式样式
+  inlineContainer: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '8px 12px',
+    background: 'linear-gradient(90deg, #fef2f2 0%, #fee2e2 100%)',
+    borderRadius: '6px',
+    border: '1px solid #fca5a5',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    fontSize: '13px',
+    color: '#7f1d1d',
+    flexWrap: 'wrap' as const,
+  },
+  inlineIcon: {
+    color: '#dc2626',
+    fontSize: '14px',
+    flexShrink: '0',
+  },
+  inlineText: {
+    flex: '1',
+    minWidth: '0',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap' as const,
+  },
+  inlineMessage: {
+    opacity: '0.85',
+  },
+  inlineBtn: {
+    padding: '3px 8px',
+    fontSize: '11px',
+    fontWeight: '500',
+    color: '#b91c1c',
+    background: '#fff',
+    border: '1px solid #fca5a5',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    flexShrink: '0',
+    transition: 'all 0.15s',
   },
 }
 

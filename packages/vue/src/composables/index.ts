@@ -5,4 +5,5 @@
 
 export * from './useErrorHandler'
 export * from './useAsyncError'
+export * from './useGlobalErrorToast'
 

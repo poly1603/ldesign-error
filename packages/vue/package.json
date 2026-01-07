@@ -37,6 +37,18 @@
       "require": "./lib/composables/*.cjs",
       "default": "./esm/composables/*.js"
     },
+    "./directives": {
+      "types": "./esm/directives/index.d.ts",
+      "import": "./esm/directives/index.js",
+      "require": "./lib/directives/index.cjs",
+      "default": "./esm/directives/index.js"
+    },
+    "./directives/*": {
+      "types": "./esm/directives/*.d.ts",
+      "import": "./esm/directives/*.js",
+      "require": "./lib/directives/*.cjs",
+      "default": "./esm/directives/*.js"
+    },
     "./plugin": {
       "types": "./esm/plugin/index.d.ts",
       "import": "./esm/plugin/index.js",

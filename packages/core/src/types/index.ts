@@ -287,9 +287,16 @@ export type ResolvedErrorReporterOptions = Required<Omit<ErrorReporterOptions, '
 }
 
 /**
+ * 错误边界显示模式
+ */
+export type ErrorBoundaryMode = 'full' | 'overlay' | 'inline'
+
+/**
  * 错误边界配置
  */
 export interface ErrorBoundaryOptions {
+  /** 显示模式 @default 'full' */
+  mode?: ErrorBoundaryMode
   /** 是否显示错误详情 @default true */
   showDetails?: boolean
   /** 是否显示堆栈 @default false */
@@ -302,12 +309,48 @@ export interface ErrorBoundaryOptions {
   errorTitle?: string
   /** 自定义错误消息 */
   errorMessage?: string
+  /** overlay 模式最小高度 */
+  overlayMinHeight?: string
   /** 错误回调 */
   onError?: (error: ErrorInfo) => void
   /** 重置回调 */
   onReset?: () => void
   /** 重试回调 */
   onRetry?: (count: number) => void
+}
+
+/**
+ * 全局错误提示配置
+ */
+export interface ErrorToastOptions {
+  /** 是否启用 @default true */
+  enabled?: boolean
+  /** 最大显示数量 @default 5 */
+  maxToasts?: number
+  /** 默认显示时长 (ms) @default 5000 */
+  defaultDuration?: number
+  /** 位置 @default 'top-right' */
+  position?: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left'
+  /** 是否自动显示 Vue 错误 */
+  showVueErrors?: boolean
+  /** 是否自动显示全局错误 */
+  showGlobalErrors?: boolean
+}
+
+/**
+ * Tracker 集成配置
+ */
+export interface TrackerIntegrationOptions {
+  /** 是否启用 @default true */
+  enabled?: boolean
+  /** 最大获取的事件数量 @default 20 */
+  maxEvents?: number
+  /** 包含的事件类型 */
+  includeTypes?: string[]
+  /** 排除的事件类型 */
+  excludeTypes?: string[]
+  /** 是否包含事件详情数据 @default true */
+  includeEventData?: boolean
 }
 
 // ============================================================================
